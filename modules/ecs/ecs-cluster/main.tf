@@ -120,6 +120,80 @@ resource "aws_autoscaling_group" "ecs" {
   }
 }
 
+########-------Policy------##########
+# create auto scaling policy for both scale up and scale down and attach it to auto scaling group
+######################################
+resource "aws_autoscaling_policy" "scale_up" {
+  name                   = "asp-${var.region_id}-${var.environment}-${var.cost_centre}-${var.app_service}EcsScaleUp-${var.seq_id}"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = "${aws_autoscaling_group.ecs.name}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name                   = "asp-${var.region_id}-${var.environment}-${var.cost_centre}-${var.app_service}EcsScaleDown-${var.seq_id}"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = "${aws_autoscaling_group.ecs.name}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+########-------metric alarm------##########
+# scale up/down based on CPU/Memory utilization 
+######################################
+resource "aws_cloudwatch_metric_alarm" "asg_cpu_high" {
+  alarm_name          = "cla-${var.region_id}-${var.environment}-${var.cost_centre}-${var.app_service}EcsAsgCPUUtilizationHigh-${var.seq_id}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"   #GreaterThanOrEqualToThreshold, GreaterThanThreshold, LessThanThreshold, LessThanOrEqualToThreshold.
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization" #CPUReservation CPUUtilization MemoryReservation MemoryUtilization
+  namespace           = "AWS/ECS"
+  period              = "300"
+  statistic           = "Maximum"
+  threshold           = "80"
+
+  dimensions {
+    ClusterName = "${aws_ecs_cluster.cluster.name}"
+  }
+
+  alarm_description = "Scale up if the cpu reservation is above 80% for 5 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.scale_up.arn}"]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "asg_cpu_low" {
+  alarm_name          = "cla-${var.region_id}-${var.environment}-${var.cost_centre}-${var.app_service}EcsAsgCPUUtilizationLow-${var.seq_id}"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = "300"
+  statistic           = "Maximum"
+  threshold           = "30"
+
+  dimensions {
+    ClusterName = "${aws_ecs_cluster.cluster.name}"
+  }
+
+  alarm_description = "Scale down if the cpu reservation is below 30% for 5 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.scale_down.arn}"]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 #############################################
 # EFS
 ##############################################
@@ -192,116 +266,8 @@ resource "aws_efs_mount_target" "main" {
 
 
 
+
+
 resource "aws_ecs_cluster" "cluster" {
   name = "ecs-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}-${var.seq_id}"
 }
-
-
-
-
-
-
-
-
-/**
-resource "aws_autoscaling_group" "main" {
-  name = "asg-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}Ecs-${var.seq_id}"
-
-  availability_zones   = ["${data.aws_availability_zones.main.names}"]
-  vpc_zone_identifier  = ["${data.aws_subnet_ids.private_app_subnets.ids}"]
-  launch_configuration = "${aws_launch_configuration.main.id}"
-  min_size             = "${var.min_size}"
-  max_size             = "${var.max_size}"
-  desired_capacity     = "${var.desired_capacity}"
-  enabled_metrics      = ["GroupMinSize", "GroupMaxSize", "GroupDesiredCapacity", "GroupInServiceInstances", "GroupPendingInstances", "GroupStandbyInstances", "GroupTerminatingInstances", "GroupTotalInstances"]
-
-
-
-
-resource "aws_launch_configuration" "main" {
-  name = "lcg-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}Ecs-${var.seq_id}"
-  image_id                    = "${var.image_id}"
-  instance_type               = "${var.instance_type}"
-  ebs_optimized               = "${var.instance_ebs_optimized}"
-  iam_instance_profile        = "${aws_iam_instance_profile.ecs.id}"
-  key_name                    = "${var.key_name}"
-  security_groups             = ["${var.security_group_id}"]
-  user_data                   = "${data.template_file.ecs_cloud_config.rendered}"
-  associate_public_ip_address = "${var.associate_public_ip_address}"
-
-  # Volume tags is not available for launch configuration #14558
-  # root
-  root_block_device {
-    volume_type = "gp2"
-    volume_size = "${var.root_volume_size}"
-  }
-
-  # docker
-  ebs_block_device {
-    device_name = "/dev/xvdcz"
-    volume_type = "gp2"
-    volume_size = "${var.docker_volume_size}"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-
-data "aws_ami" "ecs_ami" {
-  most_recent = true
-
-  filter {
-    name   = "owner-alias"
-    values = ["amazon"]
-  }
-
-  filter {
-    name   = "name"
-    values = ["amzn-ami-${var.ami_version}-amazon-ecs-optimized"]
-  }
-}
-data "aws_vpc" "vpc" {
-  id = "${var.vpc_id}"
-}
-
-
-
-
-
-
-
-resource "aws_security_group" "ecs" {
-  name        = "ecs-sg-${var.name}"
-  description = "Container Instance Allowed Ports"
-  vpc_id      = "${data.aws_vpc.vpc.id}"
-
-  ingress {
-    from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
-    cidr_blocks = "${var.allowed_cidr_blocks}"
-  }
-
-  ingress {
-    from_port   = 0
-    to_port     = 65535
-    protocol    = "udp"
-    cidr_blocks = "${var.allowed_cidr_blocks}"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags {
-    Name = "ecs-sg-${var.name}"
-  }
-}
-*/
-
-# Make this a var that an get passed in?
