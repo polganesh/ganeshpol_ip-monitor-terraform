@@ -26,8 +26,7 @@ data "template_file" "user_data" {
     additional_user_data_script = "${var.additional_user_data_script}"
     cluster_name                = "ecs-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}-${var.seq_id}"
     docker_storage_size         = "${var.docker_storage_size}"
-    dockerhub_token             = "${var.dockerhub_token}"
-    dockerhub_email             = "${var.dockerhub_email}"
+    efs_target       = "${aws_efs_file_system.main.id}"
   }
 }
 
@@ -120,6 +119,78 @@ resource "aws_autoscaling_group" "ecs" {
     create_before_destroy = true
   }
 }
+
+#############################################
+# EFS
+##############################################
+resource "aws_security_group" "efs" {
+  name        = "sgr-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}EcsEfs-${var.seq_id}"
+  vpc_id      = "${data.aws_vpc.vpc.id}"
+  description = "EFS Security Group"
+
+
+  ingress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["${data.aws_vpc.vpc.cidr_block}"]
+  }
+
+  egress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["${data.aws_vpc.vpc.cidr_block}"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags {
+    Name = "sgr-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}EcsEfs-${var.seq_id}"
+    	RegionId	="${var.region_id}"
+		Environment = "${var.environment}"
+		CostCentre	="${var.cost_centre}"
+		VPCSeqId	="${var.vpc_seq_id}"
+		VersionId	="${var.version_id}" 
+		BuildDate	="${var.build_date}"
+		AppRole		="${var.app_role}"
+  }
+}
+
+resource "random_id" "creation_token" {
+  byte_length   = 8
+  prefix        = "${var.cost_centre}-"
+}
+
+resource "aws_efs_file_system" "main" {
+  creation_token = "${random_id.creation_token.hex}"
+  
+   tags {
+    Name = "efs-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}-${var.seq_id}"
+    	RegionId	="${var.region_id}"
+		Environment = "${var.environment}"
+		CostCentre	="${var.cost_centre}"
+		VPCSeqId	="${var.vpc_seq_id}"
+		VersionId	="${var.version_id}" 
+		BuildDate	="${var.build_date}"
+		AppRole		="${var.app_role}"
+  }
+  
+}	
+
+
+
+# mount it in private sub net AZ and assign it security group
+resource "aws_efs_mount_target" "main" {
+  count = "${length(data.aws_subnet_ids.private_app_subnets.ids)}"
+  file_system_id = "${aws_efs_file_system.main.id}"
+  subnet_id      = "${element(split(",", element(data.aws_subnet_ids.private_app_subnets.ids, count.index)), 2)}"
+  security_groups = ["${aws_security_group.efs.id}"]
+}
+
+
 
 resource "aws_ecs_cluster" "cluster" {
   name = "ecs-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}-${var.seq_id}"

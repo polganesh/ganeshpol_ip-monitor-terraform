@@ -196,3 +196,4 @@ variable "maintenance_time" {}
 variable "maintenance_day"{}
 # variable "security_group_id"{}
 variable "instance_ebs_optimized"{}
+variable "app_role"{}
