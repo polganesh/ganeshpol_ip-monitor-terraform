@@ -1,5 +1,5 @@
 terraform {
   backend "local" {
-    path = "../../../../tfstate/vpc-example/n/terraformstate.tfstate"
+    path = "../../../../tfstate/nonprod-env/ip-monitor/base/tfstate.tfstate"
   }
 }
