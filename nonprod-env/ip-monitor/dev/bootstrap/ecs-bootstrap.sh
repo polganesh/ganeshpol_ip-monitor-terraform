@@ -1,19 +1,37 @@
-#!/bin/bash
 
-# update/install aws-cli ecs init etc to latest version
+#!/bin/bash
+{
 yum -y install aws-cli ecs-init nfs-utils awslogs jq
+sudo yum install -y amazon-efs-utils
+# yum update -y ecs-init
+
+# sleep 180
+
+# AWS-CLI Access Details
+
+export AWS_ACCESS_KEY_ID=${access_key}
+export AWS_SECRET_ACCESS_KEY=${secret_key}
+export AWS_DEFAULT_REGION=${region}
+
+echo 'AWS_ACCESS_KEY_ID=${access_key}' > /tmp/config.log
+echo 'AWS_SECRET_ACCESS_KEY=${secret_key}' >> /tmp/config.log
+echo 'AWS_DEFAULT_REGION=${region}' >> /tmp/config.log
 
 # EFS Mount
-mkdir -p /data/efs/generic
-echo "${efs_target}.efs.eu-central-1.amazonaws.com:/ /data/efs/generic nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,_netdev 0 0" >> /etc/fstab
-mount /data/efs/generic
-# anyone can read and write need to check how to improve this security further
-# sudo chmod 666 -r /data/efs/generic
-sudo chmod 777  /data/efs/generic
-echo "${efs_target}.efs.eu-central-1.amazonaws.com:/ /data/efs/generic" >> /tmp/config.log
+#Create variables for source and target
+#DIR_SRC=${efs_target}.efs.eu-central-1.amazonaws.com
+#DIR_TGT=/data/efs/generic
+#Mount EFS file system
+# mount -t nfs4 $DIR_SRC:/ $DIR_TGT
 
 
-# echo ECS_CLUSTER=${cluster_name} >> /etc/ecs/ecs.config
+
+mkdir -p efs
+echo "${efs_target}.efs.eu-west-1.amazonaws.com:/ /data/efs/generic nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,_netdev 0 0" >> /etc/fstab
+#mount /data/efs/generic
+#efs mount helper and encryption of data in transit
+sudo mount -t efs  $efs_target:/ efs
+echo "${efs_target}.efs.eu-west-1.amazonaws.com:/ /data/efs/generic" >> /tmp/config.log
 
 # ECS Agent Configuration
 
@@ -26,14 +44,18 @@ ECS_IMAGE_CLEANUP_INTERVAL=10m
 ECS_IMAGE_MINIMUM_CLEANUP_AGE=30m" > /etc/ecs/ecs.config
 
 
-
 # Docker Configuration
-echo 'OPTIONS="$${OPTIONS} --storage-opt dm.basesize=${docker_storage_size}G"' >> /etc/sysconfig/docker
+echo 'OPTIONS="$${OPTIONS} --storage-opt dm.basesize=10G"' >> /etc/sysconfig/docker
 echo 'OPTIONS="$${OPTIONS} --storage-opt dm.basesize=10G"' >> /tmp/config.log
+
+# echo 'docker ps -aq --filter status=dead| xargs -l docker docker rm' > /etc/cron.hourly/docker_kill_dead && chmod 755 /etc/cron.hourly/docker_kill_dead
 
 stop ecs
 start ecs
 
 
-# Append addition user-data script
-${additional_user_data_script}
+} > /var/log/ecs.log
+
+
+
+
