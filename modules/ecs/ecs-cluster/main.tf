@@ -26,7 +26,12 @@ data "template_file" "user_data" {
     additional_user_data_script = "${var.additional_user_data_script}"
     cluster_name                = "ecs-${var.region_id}-${var.environment}-${var.cost_centre}-vpc${var.vpc_seq_id}-${var.app_service}-${var.seq_id}"
     docker_storage_size         = "${var.docker_storage_size}"
-    efs_target       = "${aws_efs_file_system.main.id}"
+    efs_target       			= "${aws_efs_file_system.main.id}"
+	region           = "${var.region}"
+    access_key       = "${var.access_key}"
+    secret_key       = "${var.secret_key}"
+	# DIR_TGT						="/data/efs/generic"
+	# EFS_FILE_SYSTEM_NAME		="my-efs"
   }
 }
 
